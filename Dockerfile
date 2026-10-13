@@ -9,7 +9,7 @@ WORKDIR /build
 
 COPY app/requirements.txt .
 
-RUN pip install --prefix=/install --no-cache-dir --user -r requirements.txt
+RUN pip install --no-cache-dir --user -r requirements.txt
 
 # 2: RUN STAGE
 
