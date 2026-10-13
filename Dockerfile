@@ -1,18 +1,40 @@
-FROM python:3.12@sha256:63828510c8b5ccce3bf0d6fabd6f3d17d4effa1ffe690f80a67c8e2d394e03ee
+# 1: BUILD STAGE
 
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    gcc \
-    curl \
-    vim
+FROM python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258 AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /build
+
+COPY app/requirements.txt .
+
+RUN pip install --prefix=/install --no-cache-dir --user -r requirements.txt
+
+# 2: RUN STAGE
+
+FROM python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258 AS runner
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/home/appuser/.local/bin:${PATH}"
+
+RUN groupadd -g 10001 appgroup && \
+    useradd -u 10001 -g appgroup -m -s /sbin/nologin appuser
 
 WORKDIR /app
 
-COPY . .
+COPY --from=builder --chown=appuser:appgroup /root/.local /home/appuser/.local
 
-RUN pip install -r app/requirements.txt
+COPY --chown=root:root app/ .
+
+RUN chown root:appgroup /app && chmod 775 /app
 
 EXPOSE 8080
 
+USER appuser
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')"
 # The whole context was copied to /app, so the app package lives in /app/app.
-CMD ["gunicorn", "--chdir", "app", "--bind", "0.0.0.0:8080", "--workers", "2", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "2", "--access-logfile", "-", "app:app"]
